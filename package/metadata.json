@@ -1,0 +1,14 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [{ "Name": "harasho" }],
+        "Category": "System Information",
+        "Description": "Slide your hidden system tray icons into the panel and back, like a Mac menu bar drawer",
+        "Icon": "arrow-left",
+        "Id": "com.github.darkharasho.traydrawer",
+        "License": "MIT",
+        "Name": "Tray Drawer",
+        "Version": "1.0.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

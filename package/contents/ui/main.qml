@@ -32,6 +32,8 @@ PlasmoidItem {
     property bool busy: false
     property bool trayFound: true
     property int hiddenCount: 0
+    // Whether this drawer runs the periodic sync (only one drawer across all panels does).
+    property bool syncLeader: true
     property DBus.DBusPendingReply pendingReply
 
     // No full representation: the arrow button below is the whole widget.
@@ -56,13 +58,15 @@ PlasmoidItem {
         return "(function () {\n"
             + "var anchorId = " + JSON.stringify(Plasmoid.id) + ", mode = " + JSON.stringify(mode)
             + ", items = " + JSON.stringify(items) + ", drawerType = " + JSON.stringify(Plasmoid.pluginName) + ";\n"
-            + `function list(v) { if (!v) return []; if (typeof v === "string") return v.length ? v.split(",") : []; return Array.prototype.slice.call(v); }
+            + `var trays = [], drawers = [];
+function list(v) { if (!v) return []; if (typeof v === "string") return v.length ? v.split(",") : []; return Array.prototype.slice.call(v); }
 function uniq(a) { return a.filter(function (x, i) { return x && a.indexOf(x) === i; }); }
 function minus(a, b) { return a.filter(function (x) { return b.indexOf(x) < 0; }); }
 function flat(key) { var r = []; trays.forEach(function (t) { r = r.concat(t[key]); }); return uniq(r); }
-var trays = [];
+function put(t, key, val, old) { if (String(val) !== String(old)) t.w.writeConfig(key, val); }
 panels().forEach(function (p) {
   var ws = p.widgets(), tray = null;
+  ws.forEach(function (w) { if (w.type === drawerType) drawers.push(Number(w.id)); });
   if (!ws.some(function (w) { return w.type === drawerType; })) return;
   ws.forEach(function (w) { if (!tray && w.type === "org.kde.plasma.systemtray") tray = w; });
   if (!tray) return;
@@ -70,7 +74,7 @@ panels().forEach(function (p) {
   var shown = list(tray.readConfig("shownItems")), hidden = list(tray.readConfig("hiddenItems"));
   var temp = list(tray.readConfig("trayDrawerTemp")).filter(function (x) { return shown.indexOf(x) >= 0; });
   var synced = String(tray.readConfig("trayDrawerSynced")) === "true";
-  trays.push({ w: tray, own: ws.some(function (w) { return w.id == anchorId; }), temp: temp,
+  trays.push({ w: tray, own: ws.some(function (w) { return w.id == anchorId; }), temp: temp, oldTemp: temp.slice(),
     shown: shown, hidden: hidden, effHidden: uniq(hidden.concat(temp)), effShown: minus(shown, temp), synced: synced,
     baseH: list(tray.readConfig("trayDrawerSyncHidden")), baseS: list(tray.readConfig("trayDrawerSyncShown")) });
 });
@@ -89,7 +93,8 @@ if (!base) {
   H = H.filter(function (x) { return !(S.indexOf(x) >= 0 && newS.indexOf(x) >= 0); });
   S = minus(S, H);
 }
-var res = { found: false, hidden: [], temp: [], allHidden: H };
+// Only one drawer (the lowest id) needs to do the periodic background sync.
+var res = { found: false, hidden: [], temp: [], allHidden: H, leader: Number(anchorId) === Math.min.apply(null, drawers) };
 trays.forEach(function (t) {
   if (t.own) {
     res.found = true;
@@ -99,11 +104,12 @@ trays.forEach(function (t) {
   }
   t.temp = t.temp.filter(function (x) { return H.indexOf(x) >= 0; });
   var hidden = minus(H, t.temp), shown = uniq(S.concat(t.temp));
-  if (hidden.join() !== t.hidden.join()) t.w.writeConfig("hiddenItems", hidden);
-  if (shown.join() !== t.shown.join()) t.w.writeConfig("shownItems", shown);
-  t.w.writeConfig("trayDrawerTemp", t.temp);
-  t.w.writeConfig("trayDrawerSyncHidden", H);
-  t.w.writeConfig("trayDrawerSyncShown", S);
+  // Write only what changed: any write makes plasmashell reload the tray's config.
+  put(t, "hiddenItems", hidden, t.hidden);
+  put(t, "shownItems", shown, t.shown);
+  put(t, "trayDrawerTemp", t.temp, t.oldTemp);
+  put(t, "trayDrawerSyncHidden", H, t.baseH);
+  put(t, "trayDrawerSyncShown", S, t.baseS);
   if (!t.synced) t.w.writeConfig("trayDrawerSynced", "true");
   if (t.own) { res.hidden = hidden; res.temp = t.temp; }
 });
@@ -137,6 +143,7 @@ print(JSON.stringify(res));
                 trayFound = res.found;
                 hiddenCount = res.hidden.length;
                 allHidden = res.allHidden;
+                syncLeader = res.leader !== false;
             }
             onDone(res);
         });
@@ -334,10 +341,12 @@ print(JSON.stringify(res));
     }
 
     // Picks up changes made in either tray's settings and copies them to the other trays.
+    // Every evaluateScript call spins up a script engine inside plasmashell, so keep this
+    // rare; opening the drawer also syncs.
     Timer {
-        interval: 5000
+        interval: 30000
         repeat: true
-        running: true
+        running: root.syncLeader
         onTriggered: {
             if (!root.busy && !root.toReveal.length && !root.idleQueue.length) {
                 root.runScript("query", [], () => root.pump());

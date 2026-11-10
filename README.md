@@ -20,7 +20,8 @@ tray keeps handling icons, menus and popups, including built-in ones like clipbo
 - Settings: auto-hide delay (default 15 s, 0 = never), per-icon slide delay (default 45 ms,
   0 = all at once), open on hover, show icons that need attention.
 - Every panel with a Tray Drawer shares one Always shown / Always hidden list. Change it in
-  any tray's settings and the others follow within about 5 s. The shared state is kept in
+  any tray's settings and the others follow within about 30 s (or right away when you open
+  the drawer). The shared state is kept in
   the tray's own config (`trayDrawerSyncHidden`, `trayDrawerSyncShown`, `trayDrawerSynced`).
 - A hidden app whose tray icon reports `NeedsAttention` (StatusNotifierItem status, polled
   every 2 s) is shown until the status clears, even when the drawer is closed.
@@ -29,7 +30,17 @@ tray keeps handling icons, menus and popups, including built-in ones like clipbo
 - No divider between shown and revealed icons: the System Tray sorts its icons by category
   and name, so revealed icons mix in with the always-shown ones.
 
-Install / update:
+Install / update from a release: download `tray-drawer-<version>.plasmoid` from
+[Releases](https://github.com/darkharasho/tray-drawer/releases), then
+
+    kpackagetool6 -t Plasma/Applet -i tray-drawer-<version>.plasmoid   # first time
+    kpackagetool6 -t Plasma/Applet -u tray-drawer-<version>.plasmoid   # updates
+
+From a checkout:
 
     kpackagetool6 -t Plasma/Applet -i package   # first time
     kpackagetool6 -t Plasma/Applet -u package   # updates (restart plasmashell to load new QML)
+
+Releasing: bump `Version` in `package/metadata.json`, commit, then push a matching tag
+(`git tag v1.0.1 && git push origin v1.0.1`). The Release workflow builds the `.plasmoid`
+and publishes it.
